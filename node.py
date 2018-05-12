@@ -9,10 +9,20 @@ class Node:
     '''
     __metaclass__ = ABCMeta
 
-    def __init__(self):
-        self.children = []
+    def __init__(self, children=None, value=None):
+        '''
+        Initialize node's value and children list, and register node as a parent
+        to each of its children.
+        '''
+        if children:
+            self.children = children
+        else:
+            self.children = []
         self.parents = []
-        self.value = None
+        self.value = value
+        # Register as parent to child nodes
+        for child in self.children:
+            child.parents.append(self)
     
     @abstractmethod
     def calc_value(self):
@@ -34,21 +44,15 @@ class Node:
         if not isinstance(other, Node):
             other = Constant(other)
         
-        res = Add(self, other)
-        self.parents.append(res)
-        other.parents.append(res)
-        return res
+        return ElemAdd(self, other)
     
     __radd__ = __add__ # Since addition is commutative
 
     def __mul__(self, other):
         if not isinstance(other, Node):
             other = Constant(other)
-        
-        res = Multiply(self, other)
-        self.parents.append(res)
-        other.parents.append(res)
-        return res
+
+        return ElemMultiply(self, other)
     
     __rmul__ = __mul__
 
@@ -56,20 +60,14 @@ class Node:
         if not isinstance(other, Node):
             other = Constant(other)
         
-        negated = Negate(other)
-        other.parents.append(negated)
-        res = Add(self, negated)
-        self.parents.append(res)
-        negated.parents.append(res)
-        return res
+        return ElemAdd(self, Negate(other))
 
 class Variable(Node):
     '''
     A leaf which evaluates to data given as input
     '''
     def __init__(self, value=None):
-        super().__init__()
-        self.value = value
+        super().__init__(value=value)
     
     def substitute(self, value):
         '''
@@ -89,8 +87,7 @@ class Constant(Node):
     A leaf which represents a constant value
     '''
     def __init__(self, value):
-        super().__init__()
-        self.value = value
+        super().__init__(value=value)
     
     def calc_value(self):
         pass
@@ -98,13 +95,12 @@ class Constant(Node):
     def child_gradients(self, gradient):
         return []
 
-class Add(Node):
+class ElemAdd(Node):
     '''
-    A node which evaluates to the sum of its children
+    A node which evaluates to the element-wise sum of its children
     '''
     def __init__(self, left, right):
-        super().__init__()
-        self.children = [left, right]
+        super().__init__(children=[left, right])
     
     def calc_value(self):
         self.value = sum(c.value for c in self.children)
@@ -112,13 +108,12 @@ class Add(Node):
     def child_gradients(self, gradient):
         return [gradient, gradient]
 
-class Multiply(Node):
+class ElemMultiply(Node):
     '''
-    A node which represents multiplication of its children
+    A node which represents element-wise multiplication of its children
     '''
     def __init__(self, left, right):
-        super().__init__()
-        self.children = [left, right]
+        super().__init__(children=[left, right])
     
     def calc_value(self):
         self.value = np.multiply(self.children[0].value, self.children[1].value)
@@ -128,14 +123,30 @@ class Multiply(Node):
 
 class Negate(Node):
     '''
-    A node which negates values.
+    A node which negates its child node, element-wise.
     '''
     def __init__(self, child):
-        super().__init__()
-        self.children = [child]
+        super().__init__(children=[child])
     
     def calc_value(self):
         self.value = -self.children[0].value
     
-    def child_gradients(self, gradients):
-        return [-gradients]
+    def child_gradients(self, gradient):
+        return [-gradient]
+
+class ElemFunc(Node):
+    '''
+    A node which evaluates to an element-wise function applied to its child
+    node value. It is initialized with the function (which is applied to the
+    entire numpy array) and its derivative.
+    '''
+    def __init__(self, child, function, derivative):
+        super().__init__(children=[child])
+        self.function = function
+        self.derivative = derivative
+    
+    def calc_value(self):
+        self.value = function(self.children[0].value)
+    
+    def child_gradients(self, gradient):
+        return [np.multiply(gradient, self.derivative(self.value))]
