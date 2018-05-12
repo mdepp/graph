@@ -1,11 +1,13 @@
 import graph
 import node
+import activation
 
-x = node.Variable(2)
-y = node.Variable(2)
+x = node.Variable(2.0)
+y = node.Variable(2.0)
 
-one = node.Constant(1)
-res = (y+y) + 2*( (x+one)*(x+one) + one - one + one - one )
+one = node.Constant(1.0)
+res = (y+y) + 2.0*( (x+one)*(x+one) )
+res = activation.relu(res)
 
 g = graph.Graph(res)
 
