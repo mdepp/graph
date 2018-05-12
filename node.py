@@ -146,7 +146,7 @@ class ElemFunc(Node):
         self.derivative = derivative
     
     def calc_value(self):
-        self.value = function(self.children[0].value)
+        self.value = self.function(self.children[0].value)
     
     def child_gradients(self, gradient):
         return [np.multiply(gradient, self.derivative(self.value))]

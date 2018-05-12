@@ -1,5 +1,4 @@
 import numpy.matlib as np
-from collections import deque
 
 class Graph:
     '''
@@ -41,7 +40,7 @@ class Graph:
         attribute as a dictionary from node to gradient.
         '''
         self.calc_values()
-        self.gradients = {self.root: 1}
+        self.gradients = {self.root: 1.0}
         # Loop in topological order (from root -> leaves)
         for node in self.ordering:
             child_gradients = node.child_gradients(self.gradients[node])
