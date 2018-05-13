@@ -9,42 +9,38 @@ class Node:
 
     Each node has a value (a numpy array), which has a fixed shape. Attempting
     to set a value of a different shape will raise an exception.
+
+    The first dimension of the value is the batch dimension. This dimension can
+    have size 1; if so, it is broadcasted as appropriate. The 'shape' of the
+    node is the shape of value without the batch dimension.
     '''
     __metaclass__ = ABCMeta
 
-    def __init__(self, children=None, value=None, shape=None):
+    def __init__(self, children, shape, value=None):
         '''
         Initialize node's value and children list, and register node as a parent
-        to each of its children. Either a value or a shape must be specified.
-        If the value is not a numpy array, a numpy array is constructed from
-        that value and used as the value of the node. If the value is a scalar
-        of any kind (as np.isscalar), it is converted to a numpy array of shape
-        (1,)
+        to each of its children. Shape must be specified, and is the shape of
+        the node output, *without* the batch dimension. Shape is always extended
+        to contain at least one dimension. If 'value' is specified, it is
+        expected to be a numpy array of shape (?, shape) where ? is the
+        batch dimension, unless it is a scalar, in which case the value is set
+        to an array of shape (1, shape) with all elements equal to the scalar.
         '''
         if children:
             self.children = children
         else:
             self.children = []
         
-        if value is None and shape is None:
-            raise ValueError('Node must specify either a value or a shape')
-        elif value is not None:
-            if shape and shape != value.shape:
-                raise ValueError('Requested shape {} is different than value shape {}'.format(shape, self.value.shape))
-            
-            # Convert any type of scalar to an array of shape (1,)
+        self.shape = shape # shape if len(shape) >= 1 else (1,)
+        if value is not None:
             if np.isscalar(value):
-                if isinstance(value, np.ndarray):
-                    value = np.array([np.asscalar(value)])
-                else:
-                    value = np.array([value])
-            
-            self.shape = value.shape
-            self.value = value
+                self.value = np.full((1, *self.shape), np.asscalar(value))
+            elif self.shape != value.shape[1:]:
+                raise ValueError('Value and shape are incompatible; value.shape = {} != {} = (None, shape)'.format(value.shape, (None, *self.shape)))
+            else:
+                self.value = value
         else:
-            self.shape = shape
-            self.value = np.zeros(shape=shape)
-
+            self.value = np.zeros((1, *self.shape))
 
         self.parents = []
         # Register as parent to child nodes
@@ -53,8 +49,8 @@ class Node:
     
     def __setattr__(self, name, value):
         if name == 'value':
-            if value.shape != self.shape:
-                raise ValueError('Wrong value shape {}; should be {}.'.format(self.shape, value.shape))
+            if value.shape[1:] != self.shape:
+                raise ValueError('Wrong value shape {}; should be {}).'.format(value.shape, (None, *self.shape)))
             super().__setattr__(name, value)
         else:
             super().__setattr__(name, value)
@@ -88,9 +84,13 @@ class Node:
         Overloaded multiplication operator for nodes. If both operands have the
         same size, it defaults to element-wise multiplication. Otherwise, scalar
         multiplication or matrix-vector multiplication is chosen as appropriate.
+
+        If an argument is not a node, a Variable node is constructed for it,
+        with constant value across all batches (it is assumed that the argument
+        has no batch dimension).
         '''
         if not isinstance(other, Node):
-            other = Constant(other)
+            other = Variable(np.array([other]))
 
         if self.shape == other.shape:
             return ElemMultiply(self, other)
@@ -116,36 +116,21 @@ class Node:
 
 class Variable(Node):
     '''
-    A leaf which evaluates to data given as input
-    '''
-    def __init__(self, value=None):
-        super().__init__(value=value)
-    
-    def substitute(self, value):
-        '''
-        Set the value of this variable.
-        '''
-        self.value = value
-    
-    def calc_value(self):
-        pass
-    
-    def child_gradients(self, gradient):
-        return []
-
-
-class Constant(Node):
-    '''
-    A leaf which represents a constant value
+    A leaf which has a single value.
     '''
     def __init__(self, value):
-        super().__init__(value=value)
+        '''
+        Initialize with the given value. This value must contain the batch
+        dimension.
+        '''
+        super().__init__(children=[], shape=value.shape[1:], value=value)
     
     def calc_value(self):
         pass
     
     def child_gradients(self, gradient):
         return []
+
 
 class ElemAdd(Node):
     '''
@@ -175,7 +160,8 @@ class ElemMultiply(Node):
         self.value = np.multiply(self.children[0].value, self.children[1].value)
 
     def child_gradients(self, gradient):
-        return [gradient*self.children[1].value, gradient*self.children[0].value]
+        return [np.multiply(gradient, self.children[1].value),
+                np.multiply(gradient, self.children[0].value)]
 
 class ScalarMultiply(Node):
     '''
@@ -183,6 +169,8 @@ class ScalarMultiply(Node):
     second is vector, matrix, etc.
     '''
     def __init__(self, scalar, vector):
+        if len(scalar.shape) > 1:
+            raise TypeError('{} is not a scalar.'.format(scalar))
         super().__init__(children=[scalar, vector], shape=vector.shape)
     
     def calc_value(self):
@@ -190,8 +178,8 @@ class ScalarMultiply(Node):
 
     def child_gradients(self, gradient):
         return [
-            np.dot(gradient, self.children[1].value), 
-            np.multiply(gradient, self.children[0].value*np.ones_like(self.children[1].value)),
+            np.einsum('...j,...j->...', gradient, self.children[1].value),
+            np.multiply(gradient, self.children[0].value),
         ]
 
 class MatVecMultiply(Node):
@@ -199,15 +187,17 @@ class MatVecMultiply(Node):
     A node which represents multiplication of a matrix and a vector.
     '''
     def __init__(self, matrix, vector):
+        if matrix.shape[1] != vector.shape[0]:
+            raise ValueError('Cannot multiply matrix and vector of shapes {}, {}'.format(matrix.shape, vector.shape))
         super().__init__(children=[matrix, vector], shape=(matrix.shape[0],))
 
     def calc_value(self):
-        self.value = np.dot(self.children[0].value, self.children[1].value)
+        self.value = np.einsum('...jk,...k->...j', self.children[0].value, self.children[1].value)
     
     def child_gradients(self, gradient):
         return [
-            np.outer(gradient, self.children[1].value),
-            np.dot(gradient.T, self.children[0].value)
+            np.einsum('...j,...k->...jk', gradient, self.children[1].value),
+            np.einsum('...j,...jk->...k', gradient, self.children[0].value)
         ]
 
 class Negate(Node):

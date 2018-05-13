@@ -46,7 +46,7 @@ class Graph:
             child_gradients = node.child_gradients(self.gradients[node])
             for child, gradient in zip(node.children, child_gradients):
                 if child not in self.gradients:
-                    self.gradients[child] = np.zeros_like(child.value)
+                    self.gradients[child] = np.zeros_like(gradient)
                 
                 self.gradients[child] += gradient
 

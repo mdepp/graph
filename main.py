@@ -13,12 +13,14 @@ width = 4
 
 # one = node.Constant(np.ones((length,)))
 
-# res = (y+y) * 2.0*( A*((x+one)*(x+one)) )
+# res = (y+y) * 2..0.*( A*((x+one)*(x+one)) )
 # res = activation.relu(res)
 
-A = node.Constant(np.array([[0.9, -1],[1, 0.9]]))
-x = node.Variable(np.array([0.3,0.4]))
-res = A*x
+W = node.Variable(np.array([ [[2., 1.],[1., 2.]] ]))
+b = node.Variable(np.array([ [0., 0.] ]))
+x = node.Variable(np.array([ [2.,1.], [1., 2.] ]))
+product = (W*x)
+res = product*product + b
 
 g = graph.Graph(res)
 
@@ -27,5 +29,16 @@ g.calc_values()
 g.calc_gradients()
 print('value={}'.format(res.value))
 # print('x={x}, y={y}: d/dx={dx}, d/dy={dy}'.format(x=x.value, y=y.value, dx=g.gradients[x], dy=g.gradients[y]))
-print('d/dA = {}'.format(g.gradients[A]))
-print('d/dx = {}'.format(g.gradients[x]))
+print('d/dW = \n{}'.format(g.gradients[W]))
+print('d/db = \n{}'.format(g.gradients[b]))
+print('d/dx = \n{}'.format(g.gradients[x]))
+
+
+# TODO: A few bugs..
+#   - Matrix multiplication is a bit broken, since rmul assumes commutativity
+#   - Node ctor says it converts non-arrays to arrays, but does not
+#   - __add__ needs a doc comment
+#   - rsub is not implemented
+#   - Variable still has substitute()
+#   - No shape tests in ScalarMultiply, MatVecMultiply
+#   - Functor is still a bit of an ugly hack and should be moved
