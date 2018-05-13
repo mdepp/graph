@@ -37,8 +37,10 @@ class Graph:
     def calc_gradients(self):
         '''
         Calculate all gradients, and store them in the Graph's 'gradients'
-        attribute as a dictionary from node to gradient.
+        attribute as a dictionary from node to gradient. Average gradients over
+        the entire batch.
         '''
+        # Calculate all gradients
         self.calc_values()
         self.gradients = {self.root: np.ones_like(self.root.value)}
         # Loop in topological order (from root -> leaves)
@@ -49,6 +51,9 @@ class Graph:
                     self.gradients[child] = np.zeros_like(gradient)
                 
                 self.gradients[child] += gradient
+        # Average gradients over the entire batch
+        for node, gradient in self.gradients.items():
+            self.gradients[node] = np.mean(gradient, axis=0)
 
 
     def visualize(self, filename='graph.gv', view=True):
