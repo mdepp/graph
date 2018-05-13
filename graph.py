@@ -40,7 +40,7 @@ class Graph:
         attribute as a dictionary from node to gradient.
         '''
         self.calc_values()
-        self.gradients = {self.root: 1.0}
+        self.gradients = {self.root: np.ones_like(self.root.value)}
         # Loop in topological order (from root -> leaves)
         for node in self.ordering:
             child_gradients = node.child_gradients(self.gradients[node])
@@ -58,7 +58,8 @@ class Graph:
         from graphviz import Digraph
         dot = Digraph(comment='Computation Graph')
 
-        names = {n: '{}; {}'.format(type(n), i) for i,n in enumerate(self.ordering)}
+        names = {n: '{}; {}'.format(type(n), i)
+            for i,n in enumerate(self.ordering)}
 
         for index, node in enumerate(self.ordering):
             dot.node(names[node])
